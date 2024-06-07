@@ -1,0 +1,171 @@
+---
+title: "Tree based models"
+author: 
+  - name: Marco Gaudio
+  - affiliation: Master di II livello in Artificial Intelligence & Data Science
+date: today
+format: 
+  revealjs: 
+    incremental: true
+    slide-number: true
+    transition: fade
+    transition-speed: slow
+editor: visual
+---
+
+```{r}
+
+library(tidyverse)
+library(openxlsx)
+library(readr)
+library(readxl)
+library(rpart)
+library(rpart.plot)
+library(distRforest)
+library(extras)
+library(caret)
+library(MetricsWeighted)
+source("./utils.R")
+set.seed(1984)
+
+health <- read.csv("./data/health_insurance.csv") %>% 
+  tibble::tibble()
+```
+
+## Backgrounds {background="#43464B"}
+
+-   Modelli utilizzati e stato dell'arte
+-   Loss function: Gamma Deviance
+-   CART model: complexity parameter tuning
+-   Random Forest model
+-   Conclusioni
+
+## Dataset: train e test
+
+```{r, echo=TRUE, eval=TRUE}
+#| fig-align: center
+#| fig-width: 6
+#| fig-height: 4
+#| fig-pos: ht
+#| fig-cap: "The Sampling Distribution."
+#| fig-cap-location: bottom
+#| label: fig-sampling
+#| echo: false
+
+# modifico data type
+health <- health %>% 
+  dplyr::mutate(
+    sex = as.factor(sex),
+    region = as.factor(region),
+    smoker = as.factor(smoker)
+  )
+
+# k fold
+k <- 5
+
+# Creo gli indici dei fold
+folds <- createFolds(health$charges, k = k, list = TRUE)
+
+# Inizializzo un vettore per memorizzare il numero del fold per ciascuna riga
+fold_number <- rep(NA, nrow(health))
+
+# Assegna il numero del fold a ciascuna riga
+for (fold in seq_along(folds)) {
+  fold_number[folds[[fold]]] <- fold
+}
+
+# Aggiungo la variabile fold al dataset
+health$fold <- factor(fold_number)
+
+```
+
+## Dataset: train e test (2)
+
+```{r}
+
+health %>% 
+  DT::datatable(options = list(
+    # scrollY = TRUE,
+    searching = FALSE,
+    paging = TRUE
+  ))
+
+
+```
+
+## Exploratory Data analysis {#sec-r_code}
+
+<!-- ## Loss function -->
+
+<!-- - Gamma deviance:  -->
+
+<!-- ```{r, echo=TRUE, eval=TRUE} -->
+
+<!-- Gamma.Deviance <- function(obs, pred, alpha){ -->
+
+<!--   x <- rep(0, length(obs))  -->
+
+<!--   for (i in 1 : length(obs)){ -->
+
+<!--     x[i] <- alpha[i] * (((obs[i] - pred[i]) /  pred[i] ) - log(obs[i]/pred[i])) -->
+
+<!--   } -->
+
+<!--   return(2 * sum(x)) -->
+
+<!-- } -->
+
+<!-- ``` -->
+
+## CART model
+
+### Algoritmo {#sec-r_code}
+
+```{r, echo=TRUE, eval=TRUE}
+
+sev_cp_values_grid <- seq(from = 0,
+                          to = 0.019,
+                          len = 200)
+
+# vector for storing the error for each complexity
+# parameter in cp_values_grid.
+sev_error_estimates_rt <- rep(0, times = length(sev_cp_values_grid))
+sev_error_estimates_rt_train <- rep(0, times = length(sev_cp_values_grid))
+
+# vector for storing loss for each fold.
+sev_error_estimate_per_fold_rt <- rep(0, k)
+sev_error_estimate_per_fold_rt_train <- rep(0, k)
+
+for (j in 1:length(sev_cp_values_grid)) {
+  
+  sev_current_cp_value = sev_cp_values_grid[j]
+  
+  for(i in 1:k) {
+    
+    train_dataset = health %>% 
+      filter(fold != i)
+    test_dataset = health %>% 
+      filter(fold == i)
+    
+    # fit the regression tree
+    sev_train_tree <- distRforest::rpart(charges ~ region + age + bmi + children, 
+                                         data = train_dataset , method = "gamma",  
+                                         control = rpart.control(xval = 0,
+                                                                 # maxcompete = 0, 
+                                                                 # maxsurrogate = 0,
+                                                                 # minsplit = 200,
+                                                                 # minbucket = 0.3 * nrow(train_dataset),
+                                                                 cp = sev_current_cp_value))
+    
+    # get predictions
+    test_dataset$fit <- predict(sev_train_tree, newdata=test_dataset, type="vector") 
+    train_dataset$fit <- predict(sev_train_tree)
+    # get loss
+    sev_error_estimate_per_fold_rt[i] <- deviance_gamma(actual = test_dataset$charges, predicted = test_dataset$fit)
+    sev_error_estimate_per_fold_rt_train[i] <- deviance_gamma(actual = train_dataset$charges, predicted = train_dataset$fit)
+  }
+  sev_error_estimates_rt[j] <- mean(sev_error_estimate_per_fold_rt)
+  sev_error_estimates_rt_train[j] <- mean(sev_error_estimate_per_fold_rt_train)
+}
+
+```
