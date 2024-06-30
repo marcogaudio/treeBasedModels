@@ -49,7 +49,6 @@ execute:
 ```{r}
 #| eval: true
 #| echo: true
-#| output: false
 library(MLDataR)
 library(dplyr)
 library(tidyr)

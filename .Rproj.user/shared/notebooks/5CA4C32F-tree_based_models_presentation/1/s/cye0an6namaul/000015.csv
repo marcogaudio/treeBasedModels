@@ -1,0 +1,6 @@
+"0",""
+"0","# Calculate AUC for both training and test sets"
+"0","auc_train <- auc(roc_train)"
+"0","auc_test <- auc(roc_test)"
+"0","# auc_train"
+"0","# auc_test"
